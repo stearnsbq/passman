@@ -5,6 +5,48 @@
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Svelte + TS + Vite App</title>
+
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        background: url("https://www.transparenttextures.com/patterns/gplay.png"),
+          linear-gradient(
+            137deg,
+            rgba(0, 127, 255, 1) 0%,
+            rgba(255, 153, 68, 1) 100%
+          );
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: Roboto, "Helvetica Neue", sans-serif;
+      }
+
+      input {
+        padding: 5px;
+        border: none;
+        border-radius: 5px;
+      }
+
+      button {
+        border: none;
+        padding: 15px;
+        background-color: #007fff;
+        color: white;
+        font-size: 16px;
+        border-radius: 10px;
+        box-shadow: rgba(60, 64, 67, 0.3) 0px 1px 2px 0px,
+          rgba(60, 64, 67, 0.15) 0px 2px 6px 2px;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
