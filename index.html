@@ -37,6 +37,7 @@
       }
 
       button {
+        cursor: pointer;
         border: none;
         padding: 15px;
         background-color: #007fff;
@@ -46,6 +47,12 @@
         box-shadow: rgba(60, 64, 67, 0.3) 0px 1px 2px 0px,
           rgba(60, 64, 67, 0.15) 0px 2px 6px 2px;
       }
+
+      button:disabled{
+        cursor: not-allowed;
+        background-color: #797575;
+      }
+
     </style>
   </head>
   <body>
