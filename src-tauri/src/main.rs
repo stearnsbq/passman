@@ -31,7 +31,7 @@ fn main() {
 
 
   println!("started");
-  login(String::from("U2eolreredcira!!")).unwrap();
+ // login(String::from("U2eolreredcira!!")).unwrap();
 
   tauri::Builder::default()
   .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup])
@@ -43,7 +43,6 @@ fn main() {
     
 }
 
-
 #[tauri::command]
 fn is_vault_setup() -> bool {
   return path::Path::new("./db/database.db").exists() && path::Path::new("./keys").exists();
@@ -51,7 +50,7 @@ fn is_vault_setup() -> bool {
 
 
 #[tauri::command]
-fn login(master_key: String) -> Result<UserData, String> {
+fn login(master_key: String) -> Result<Vault, String> {
 
   let mk_hash = sha256(master_key.as_bytes());
 
@@ -60,8 +59,6 @@ fn login(master_key: String) -> Result<UserData, String> {
   let mut keys = keys_string.lines();
 
   let sk_cipher_hex = keys.next().unwrap();
-
-  println!("SECRET KEY: {}", sk_cipher_hex);
 
   let sk_cipher_raw = base64::decode(sk_cipher_hex).unwrap();
 
@@ -78,15 +75,29 @@ fn login(master_key: String) -> Result<UserData, String> {
 
   raw_auk.zeroize();
 
+
+  let mut passwords_stmt = conn.prepare("SELECT * FROM Password").unwrap();
+
+  let passwords_stmt_iter = passwords_stmt.query_map([], |row| {
+    Ok(
+      Password{
+        password_id: row.get(0)?,
+        source: row.get(1)?,
+        password: row.get(2)?,
+        icon: row.get(3)?
+      }
+    )
+  }).unwrap();
+
+
   let mut user_data_stmt = conn.prepare("SELECT * FROM UserData").unwrap();
 
   let mut user_data_iter = user_data_stmt.query_map([], |row| {
     Ok(
       UserData{
-        password_id: row.get(0)?,
-        source: row.get(1)?,
-        password: row.get(2)?,
-        icon: row.get(3)?
+        userdata_id: row.get(0)?,
+        vault_key: row.get(1)?,
+        last_unlock: row.get(2)?,
       }
     )
 
@@ -96,7 +107,17 @@ fn login(master_key: String) -> Result<UserData, String> {
 
   let user_data = user_data_iter.next().unwrap();
 
-  Ok(user_data.unwrap())
+  let mut passwords = Vec::new();
+
+  for password in passwords_stmt_iter {
+    passwords.push(password.unwrap());
+  }
+
+
+  Ok(Vault{
+    user_data: user_data.unwrap(),
+    passwords: passwords
+  })
 }
 
 #[tauri::command]
@@ -132,9 +153,13 @@ fn setup_vault(master_key: String, pass_phrase: String) -> bool {
 
   rand_bytes(&mut buf).unwrap(); // generate a secret key
 
-  let master_key_hash = sha256(master_key.as_bytes());
-  let pass_phrase_hash = sha256(pass_phrase.as_bytes());
+  println!("MK : {}", master_key);
 
+  let master_key_hash = sha256(master_key.as_bytes());
+
+  println!("MK HASH: {}", base64::encode(&master_key_hash));
+
+  let pass_phrase_hash = sha256(pass_phrase.as_bytes());
 
   let mut master_key_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &master_key_hash, None, &buf) {
     Ok(cipher) => cipher,
@@ -193,10 +218,26 @@ fn setup_vault(master_key: String, pass_phrase: String) -> bool {
 }
 
 
+
 #[derive(Debug, serde::Serialize)]
-struct UserData{
-  password_id : u32,
+struct Password{
+  password_id: u32,
   source: String,
   password: String,
   icon: Option<Vec<u8>>
+}
+
+
+#[derive(Debug, serde::Serialize)]
+struct UserData{
+  userdata_id : u32,
+  vault_key: String,
+  last_unlock: u32,
+}
+
+
+#[derive(Debug, serde::Serialize)]
+struct Vault{
+  user_data: UserData,
+  passwords: Vec<Password>
 }

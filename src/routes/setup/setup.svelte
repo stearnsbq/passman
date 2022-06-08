@@ -22,12 +22,24 @@ import { Router } from "svelte-routing";
     .symbols();
 
   function onSubmit(event) {
+    console.log(event)
     if(!invalid){
 
-    invoke("generate_mnemonic").then((result: string) => {
-      createdKey = true;
-      passphrase = result;
-    });
+      invoke("generate_mnemonic").then((result: string) => {
+        createdKey = true;
+        passphrase = result;
+      });
+
+      const formData = new FormData(event.target);
+
+      const data: any = {};
+      for (let field of formData) {
+        const [key, value] = field;
+        data[key] = value;
+      }
+  
+
+      key = data.key;
 
     }
   }
@@ -43,7 +55,7 @@ import { Router } from "svelte-routing";
   }
 
   function setupVault(){
-    invoke("setup_vault", {masterKey: "dome", passPhrase: "quad"}).then((result: string) => {
+    invoke("setup_vault", {masterKey: key, passPhrase: passphrase}).then((result: string) => {
 
       if(result){
      
