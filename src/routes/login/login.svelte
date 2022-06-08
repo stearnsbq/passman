@@ -1,6 +1,8 @@
 <script lang="ts">
   import { Link } from "svelte-routing";
-
+  import { invoke } from "@tauri-apps/api/tauri";
+  import { onMount } from 'svelte';
+  import { navigate } from "svelte-routing";
   // colors main blue: #007FFF
   // secondary orange: #FF9944
   // text color #3B3C36
@@ -9,13 +11,39 @@
   function onLogin(event: any) {
     const formData = new FormData(event.target);
 
-    const data = {};
+    const data: any = {};
     for (let field of formData) {
       const [key, value] = field;
       data[key] = value;
     }
-    console.log(data);
+    
+    const {key} = data;
+
+
+    invoke("login", {masterKey: key}).then((result) => {
+
+
+      console.log(result)
+
+    })
+
+
   }
+
+
+  onMount(async () => {
+
+    await invoke("is_vault_setup").then((result) => {
+
+      if(!result){
+        navigate("/setup", {replace: true})
+      }
+
+
+    })
+
+  })
+
 </script>
 
 <div class="login-content">

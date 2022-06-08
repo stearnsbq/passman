@@ -1,10 +1,11 @@
 <script lang="ts">
   import validator from "password-validator";
   import { invoke } from "@tauri-apps/api/tauri";
+import { Router } from "svelte-routing";
 
   let key = "";
   let passphrase = "";
-  let invalid = false;
+  let invalid = true;
 
   let createdKey = false;
 
@@ -21,14 +22,14 @@
     .symbols();
 
   function onSubmit(event) {
-    //if(!invalid){
+    if(!invalid){
 
-    invoke("generateMnemonic").then((result: string) => {
+    invoke("generate_mnemonic").then((result: string) => {
       createdKey = true;
       passphrase = result;
     });
 
-    //}
+    }
   }
 
   function onInput(event) {
@@ -36,10 +37,23 @@
   }
 
   function generatePassphrase() {
-    invoke("generateMnemonic").then((result: string) => {
+    invoke("generate_mnemonic").then((result: string) => {
       passphrase = result;
     });
   }
+
+  function setupVault(){
+    invoke("setup_vault", {masterKey: "dome", passPhrase: "quad"}).then((result: string) => {
+
+      if(result){
+     
+      }
+
+
+
+    });
+  }
+
 </script>
 
 <div class="setup-content">
@@ -84,7 +98,7 @@
       <section class="passphrase-body">
         <p>{passphrase}</p>
 
-        <button on:click={generatePassphrase}>Generate New</button>
+        <button on:click={setupVault}>Generate New</button>
       </section>
     {/if}
   </div>

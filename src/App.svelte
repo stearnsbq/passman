@@ -6,7 +6,7 @@
 
 <Router>
   <Route path="/">
-    <Setup />
+    <Login />
   </Route>
   <Route path="setup">
     <Setup />
