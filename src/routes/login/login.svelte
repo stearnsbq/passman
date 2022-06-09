@@ -1,49 +1,32 @@
 <script lang="ts">
-  import { Link } from "svelte-routing";
   import { invoke } from "@tauri-apps/api/tauri";
-  import { onMount } from 'svelte';
-  import { navigate } from "svelte-routing";
+  import { onMount } from "svelte";
+  import { navigate, Route } from "svelte-routing";
+  import { getFormData } from "../../lib/helpers";
   // colors main blue: #007FFF
   // secondary orange: #FF9944
   // text color #3B3C36
   // off text color: white
 
   function onLogin(event: any) {
-    const formData = new FormData(event.target);
+    const data = getFormData(event.target);
 
-    const data: any = {};
-    for (let field of formData) {
-      const [key, value] = field;
-      data[key] = value;
-    }
-    
-    const {key} = data;
+    const { key } = data;
 
-
-    invoke("login", {masterKey: key}).then((result) => {
-
-
-      console.log(result)
-
-    })
-
-
+    invoke("login", { masterKey: key }).then((result: any) => {
+      if (result) {
+        navigate("vault", { state: result });
+      }
+    });
   }
 
-
   onMount(async () => {
-
     await invoke("is_vault_setup").then((result) => {
-
-      if(!result){
-        navigate("/setup", {replace: true})
+      if (!result) {
+        navigate("/setup", { replace: true });
       }
-
-
-    })
-
-  })
-
+    });
+  });
 </script>
 
 <div class="login-content">

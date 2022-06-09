@@ -1,7 +1,8 @@
 <script lang="ts">
   import validator from "password-validator";
   import { invoke } from "@tauri-apps/api/tauri";
-import { Router } from "svelte-routing";
+  import { navigate, Router } from "svelte-routing";
+  import { getFormData } from "../../lib/helpers";
 
   let key = "";
   let passphrase = "";
@@ -14,15 +15,11 @@ import { Router } from "svelte-routing";
     .min(8)
     .has()
     .uppercase(1)
-    .has()
     .lowercase()
-    .has()
     .digits(1)
-    .has()
     .symbols();
 
   function onSubmit(event) {
-    console.log(event)
     if(!invalid){
 
       invoke("generate_mnemonic").then((result: string) => {
@@ -30,14 +27,7 @@ import { Router } from "svelte-routing";
         passphrase = result;
       });
 
-      const formData = new FormData(event.target);
-
-      const data: any = {};
-      for (let field of formData) {
-        const [key, value] = field;
-        data[key] = value;
-      }
-  
+      const data = getFormData(event.target);
 
       key = data.key;
 
@@ -58,10 +48,8 @@ import { Router } from "svelte-routing";
     invoke("setup_vault", {masterKey: key, passPhrase: passphrase}).then((result: string) => {
 
       if(result){
-     
+        navigate("login");
       }
-
-
 
     });
   }
@@ -110,7 +98,8 @@ import { Router } from "svelte-routing";
       <section class="passphrase-body">
         <p>{passphrase}</p>
 
-        <button on:click={setupVault}>Generate New</button>
+        <button on:click={generatePassphrase}>Generate New</button>
+        <button on:click={setupVault}>Accept</button>
       </section>
     {/if}
   </div>
