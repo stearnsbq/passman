@@ -3,19 +3,27 @@
     import IconInput from './icon-input.svelte'
     import PasswordInput from './password-input.svelte'
     import { createEventDispatcher } from 'svelte';
-
+    import { invoke } from "@tauri-apps/api/tauri";
 
     export let show = false;
 
-    export let image: string;
-    export let password: string;
-    export let source: string;
+    let image: string;
+    let password: string;
+    let source: string;
+    let username: string;
 
     const dispatch = createEventDispatcher();
 
     function onCreate() {
-        
 
+        invoke("add_new_password", {source, username, password, image}).then((result) => {
+
+
+            dispatch('new-password');
+            show = false;
+
+
+        })
 
     }
 
@@ -34,14 +42,16 @@
         <div class="body">
 
             <div class="icon">
-                <IconInput {image}></IconInput>
+                <IconInput bind:image={image}></IconInput>
             </div>
          
             <div class="info-input">
                 <input placeholder="Source" bind:value={source}>
-                <PasswordInput {password} ></PasswordInput>
+                <input placeholder="Username" bind:value={username}>
+
+                <PasswordInput bind:password={password} ></PasswordInput>
     
-                <button>Create</button>
+                <button on:click={onCreate}>Create</button>
             </div>
     
         </div>

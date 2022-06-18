@@ -1,5 +1,5 @@
 <script lang="ts">
-    import logo from '../../../assets/svelte.png';
+    import logo from '../../../assets/no-icon.png';
 
     let input;
     let img;

@@ -11,7 +11,6 @@ extern crate base64;
 use std::fs;
 use std::path;
 use std::str;
-use std::time;
 use std::sync::{Mutex, Arc};
 use std::rc::{Rc};
 use secstr::*;
@@ -68,7 +67,7 @@ fn main() {
 }
 
 #[tauri::command]
-fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, password: String, image: String){
+fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, username: String, password: String, image: String){
   let context = state.lock().unwrap();
 
   if !context.logged_in {
@@ -77,27 +76,20 @@ fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, passwor
 
   let conn = context.db.as_ref().unwrap();
 
-  conn.pragma_update(None, "key", context.account_key.unsecure()).unwrap();
+  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
 
   // encrypt the password
 
   let mut user_data_stmt = conn.prepare("SELECT * FROM UserData").unwrap();
 
   let mut user_data_iter = user_data_stmt.query_map([], |row| {
-    Ok(
-      UserData{
-        userdata_id: row.get(0)?,
-        vault_key: row.get(1)?,
-        last_unlock: row.get(2)?,
-      }
-    )
-
+    row.get(1)
 
   }).unwrap();
 
-  let user_data = user_data_iter.next().unwrap().unwrap();
+  let user_data : String = user_data_iter.next().unwrap().unwrap();
 
-  let mut key = base64::decode(user_data.vault_key).unwrap();
+  let mut key = base64::decode(user_data).unwrap();
 
   let password_cipher_text = match encrypt(Cipher::aes_256_cbc(), &key, None, &password.as_bytes()) {
     Ok(cipher) => cipher,
@@ -106,14 +98,12 @@ fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, passwor
 
   key.zeroize();
 
-  match conn.execute("INSERT INTO Password (source, password, icon) VALUES (?1, ?2)", params![source, base64::encode(password_cipher_text), image]){
+  match conn.execute("INSERT INTO Password (source, username, password, added, icon) VALUES (?1, ?2, ?3, ?4, ?5)", params![source, username, base64::encode(password_cipher_text), lib::time::get_current_secs(), image]){
     Ok(_) => println!("Inserted New Password Item!"),
     Err(error) => panic!("Err: {}", error)
   }
 
   conn.pragma_update(None, "key", "").unwrap();
-
-
 
 }
 
@@ -183,8 +173,9 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
       Password{
         password_id: row.get(0)?,
         source: row.get(1)?,
-        password: row.get(2)?,
-        icon: row.get(3)?
+        username: row.get(2)?,
+        added: row.get(4)?,
+        icon: row.get(5)?
       }
     )
   }).unwrap();
@@ -196,7 +187,6 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
     Ok(
       UserData{
         userdata_id: row.get(0)?,
-        vault_key: row.get(1)?,
         last_unlock: row.get(2)?,
       }
     )
@@ -283,12 +273,9 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
 
   rand_bytes(&mut buf).unwrap(); // generate a vault key
 
-  let start = time::SystemTime::now();
-  let since_the_epoch = start
-      .duration_since(time::SystemTime::UNIX_EPOCH)
-      .expect("Time went backwards");
 
-  match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(buf), since_the_epoch.as_secs()]){
+
+  match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(buf), lib::time::get_current_secs()]){
     Ok(_) => println!("Inserted Item!"),
     Err(error) => panic!("Err: {}", error)
   }
@@ -311,16 +298,16 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
 #[derive(Debug, serde::Serialize)]
 struct Password{
   password_id: u32,
+  username: String,
   source: String,
-  password: String,
-  icon: Option<Vec<u8>>
+  added: u32,
+  icon: String
 }
 
 
 #[derive(Debug, serde::Serialize)]
 struct UserData{
   userdata_id : u32,
-  vault_key: String,
   last_unlock: u32,
 }
 

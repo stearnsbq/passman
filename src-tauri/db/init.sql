@@ -1,7 +1,9 @@
 CREATE TABLE IF NOT EXISTS Password(
   password_id INTEGER PRIMARY KEY,  
   source varchar(255)  NOT NULL,
+  username varchar(255) NOT NULL,
   password varchar(255) NOT NULL,
+  added INTEGER NOT NULL,
   icon BLOB
 );
 

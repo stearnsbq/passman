@@ -27,6 +27,7 @@
     "bip39": "^3.0.4",
     "password-validator": "^5.3.0",
     "svelte-forms": "^2.3.1",
+    "svelte-idle": "^2.0.3",
     "svelte-routing": "^1.6.0",
     "zxcvbn": "^4.4.2"
   }

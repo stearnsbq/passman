@@ -1,144 +1,225 @@
 <script lang="ts">
-      export let location;
-      import { onMount } from 'svelte';
-      import Menu from './components/menu.svelte'
-      import Modal from './components/modal.svelte'
-      import PasswordInput from './components/password-input.svelte'
-      import IconInput from './components/icon-input.svelte';
-      import NewPasswordModal from './components/new-password-modal.svelte'
+  export let location;
+  import { onMount } from "svelte";
+  import Menu from "./components/menu.svelte";
+  import Modal from "./components/modal.svelte";
+  import PasswordInput from "./components/password-input.svelte";
+  import IconInput from "./components/icon-input.svelte";
+  import NewPasswordModal from "./components/new-password-modal.svelte";
+  import { listen, idle, onIdle } from "svelte-idle";
+  import logo from "../../assets/no-icon.png";
 
+  // start idle listener
+  listen({
+    timer: 3000,
+  });
 
-      onMount(() => {
-          console.log((location as any).state)
-      })
+  let idleTimeout;
 
-      let showHeaderMenu = false;
+  let vault;
 
-      let showPasswordGenModal = false;
-      let showPasswordStrengthModal = false;
-      let showNewPasswordModal = false;
+  onMount(() => {
+    vault = (location as any).state;
+  });
 
-      function onNewPassword(){
-        showNewPasswordModal = true;
-      }
+  let showHeaderMenu = false;
 
-      function onMenuClick(){
-        showHeaderMenu = !showHeaderMenu;
-      }
+  let showPasswordGenModal = false;
+  let showPasswordStrengthModal = false;
+  let showNewPasswordModal = false;
 
-      function onPasswordGeneratorClick(){
-        showPasswordGenModal = true;
-        showHeaderMenu = false;
-      }
+  function onNewPassword() {
+    showNewPasswordModal = true;
+  }
 
-      function onPasswordStrengthClick(){
-        showPasswordStrengthModal = true;
-        showHeaderMenu = false;
-     }
+  function onMenuClick() {
+    showHeaderMenu = !showHeaderMenu;
+  }
 
-     function onNewPasswordSubmit(form){
+  function onPasswordGeneratorClick() {
+    showPasswordGenModal = true;
+    showHeaderMenu = false;
+  }
 
-     }
+  function onPasswordStrengthClick() {
+    showPasswordStrengthModal = true;
+    showHeaderMenu = false;
+  }
 
+  function onImageError(e) {
+    (e as any).target.src = logo;
+  }
+
+  $: {
+    // if($idle){
+    //     alert("Are you still there? You will be logged out in 30 seconds if no activity is detected!")
+    //     idleTimeout = setTimeout(() => alert("logged out"), 5000);
+    // }else{
+    //     console.log("not idle")
+    //     clearTimeout(idleTimeout)
+    // }
+  }
 </script>
 
+<NewPasswordModal bind:show={showNewPasswordModal} />
 
-<NewPasswordModal bind:show={showNewPasswordModal}></NewPasswordModal>
+<Modal bind:show={showPasswordGenModal} />
 
-<Modal bind:show={showPasswordGenModal}>
-
-</Modal>
-
-<Modal bind:show={showPasswordStrengthModal}>
-
-</Modal>
+<Modal bind:show={showPasswordStrengthModal} />
 
 <div class="vault-content">
+  <header class="header">
+    <span on:click={onNewPassword}>Add New</span>
 
-    <header class="header">
+    <div class="menu">
+      <span on:click={onMenuClick}>Tools</span>
+      <Menu bind:showMenu={showHeaderMenu}>
+        <ul class="menu-list">
+          <li on:click={onPasswordGeneratorClick}>Password Generator</li>
+          <li on:click={onPasswordStrengthClick}>Password Strength Checker</li>
+        </ul>
+      </Menu>
+    </div>
+  </header>
 
-        <span on:click={onNewPassword}>Add New</span>
+  <section class="password-list">
+    {#if vault}
+      <ul>
+        {#each vault.passwords as password}
+          <li>
+            <div class="password-list-item">
+              <div class="list-item-icon">
+                <img
+                  src={password.icon}
+                  on:error={onImageError}
+                  alt="image for {password.password_id}"
+                />
+              </div>
 
-
-        <div class="menu">
-            <span on:click={onMenuClick}>Tools</span>
-            <Menu bind:showMenu={showHeaderMenu}>
-                <ul class="menu-list">
-                    <li on:click={onPasswordGeneratorClick}>Password Generator</li>
-                    <li on:click={onPasswordStrengthClick}>Password Strength Checker</li>
-                </ul>
-            </Menu>
-        </div>
-
-
-     
-
-    </header>
-
-
-    <section class="password-list">
-        
-    </section>
-
-
-
+              <div class="list-item-info">
+                <h3>{password.source}</h3>
+                <p>{password.username}</p>
+              </div>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
 </div>
 
-
 <style lang="scss">
-    .vault-content{
-        height: 100vh;
-        width: 100vw;
-        display: flex;
-        flex-direction: column;
+  .vault-content {
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .header {
+    position: fixed;
+    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px,
+      rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+    display: flex;
+    width: 100%;
+
+    background-color: #007fff;
+
+    color: white;
+
+    .menu {
+      display: flex;
+      flex-direction: column;
+      position: relative;
     }
 
-    .header{
-        position: relative;
-        box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
-        display: flex;
-        width: 100%;
+    span {
+      padding: 15px;
+      font-size: 24px;
+      cursor: pointer;
 
-        background-color: #007fff;
-
-        color: white;
-
-        .menu{
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        span{
-            padding: 15px;
-            font-size: 24px;  
-            cursor: pointer;
-
-            &:hover{
-                background-color: rgba(0, 0, 0, 0.3);
-              
-            }
-        }
-
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.3);
+      }
     }
+  }
 
-    .menu-list{
-        padding: 0;
+  .menu-list {
+    padding: 0;
+    margin: 0;
+
+    li {
+      cursor: pointer;
+      list-style: none;
+      padding: 15px;
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.3);
+      }
+    }
+  }
+
+  form {
+    width: 250px;
+  }
+
+  .password-list {
+    margin-top: 60px;
+    display: flex;
+    height: 100%;
+    overflow: auto;
+    justify-content: center;
+
+    .list-item-info {
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    gap: 10px;
+
+      h3{
         margin: 0;
+        padding: 0;
+      }
 
-        li{
+      p{
+        margin: 0;
+        color: rgba($color: white, $alpha: 0.6);
+      }
 
-            cursor: pointer;
-            list-style: none;
-            padding: 15px;
-            &:hover{
-                background-color: rgba(0, 0, 0, 0.3);
-            }
-        }
     }
 
-    form{
-        width: 250px;
+    .password-list-item {
+      box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 20px,
+        rgba(0, 0, 0, 0.23) 0px 6px 6px;
+      border-radius: 15px;
+      width: 150px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      background: #3b3c36;
+      padding: 15px;
     }
 
+    ul {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    li {
+      cursor: pointer;
+      list-style: none;
+      padding: 15px;
+
+      img {
+        width: 100%;
+        height: 100px;
+        object-fit: contain;
+      }
+    }
+  }
 </style>
