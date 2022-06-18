@@ -12,7 +12,8 @@ use std::fs;
 use std::path;
 use std::str;
 use std::time;
-
+use std::sync::{Mutex, Arc};
+use std::rc::{Rc};
 use secstr::*;
 use bip39::{Mnemonic, Language};
 use openssl::rand::rand_bytes;
@@ -26,21 +27,117 @@ use rusqlite::{params, Connection, Result};
 
 mod lib;
 
+#[derive(Debug)]
+struct Context{
+  db: Option<Connection>,
+  logged_in: bool,
+  account_key: secstr::SecStr
+}
+
+
+
 
 fn main() {
 
 
-  println!("started");
- // login(String::from("U2eolreredcira!!")).unwrap();
+
+  let mut context = Context{
+    db: Default::default(),
+    logged_in: false,
+    account_key: SecStr::from("")
+  };
+
+  if is_vault_setup() { // SETUP CONTEXT
+
+    let db = match Connection::open("./db/database.db"){
+      Ok(conn) => conn,
+      Err(error) => panic!("Failed to create db connection for context {}", error)
+    };
+
+    context.db = Some(db);
+
+  }
+
 
   tauri::Builder::default()
-  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup])
+  .manage(Mutex::new(context))
+  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup, logout, generate_password, add_new_password])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 
+}
+
+#[tauri::command]
+fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, password: String, image: String){
+  let context = state.lock().unwrap();
+
+  if !context.logged_in {
+    return;
+  }
+
+  let conn = context.db.as_ref().unwrap();
+
+  conn.pragma_update(None, "key", context.account_key.unsecure()).unwrap();
+
+  // encrypt the password
+
+  let mut user_data_stmt = conn.prepare("SELECT * FROM UserData").unwrap();
+
+  let mut user_data_iter = user_data_stmt.query_map([], |row| {
+    Ok(
+      UserData{
+        userdata_id: row.get(0)?,
+        vault_key: row.get(1)?,
+        last_unlock: row.get(2)?,
+      }
+    )
 
 
-    
+  }).unwrap();
+
+  let user_data = user_data_iter.next().unwrap().unwrap();
+
+  let mut key = base64::decode(user_data.vault_key).unwrap();
+
+  let password_cipher_text = match encrypt(Cipher::aes_256_cbc(), &key, None, &password.as_bytes()) {
+    Ok(cipher) => cipher,
+    Err(error) => panic!("Failed to create cipher text {:?}", error),
+  };
+
+  key.zeroize();
+
+  match conn.execute("INSERT INTO Password (source, password, icon) VALUES (?1, ?2)", params![source, base64::encode(password_cipher_text), image]){
+    Ok(_) => println!("Inserted New Password Item!"),
+    Err(error) => panic!("Err: {}", error)
+  }
+
+  conn.pragma_update(None, "key", "").unwrap();
+
+
+
+}
+
+#[tauri::command]
+fn generate_password(state: tauri::State<Mutex<Context>>) -> String{
+
+  let context = state.lock().unwrap();
+
+  if context.logged_in {
+    return lib::crypto::generate_password();
+  }
+
+  return String::from("");
+}
+
+#[tauri::command]
+fn logout(state: tauri::State<Mutex<Context>>)  {
+
+  let mut context = state.lock().unwrap();
+
+  context.logged_in = false;
+
+  context.account_key.zero_out();
+
 }
 
 #[tauri::command]
@@ -50,7 +147,7 @@ fn is_vault_setup() -> bool {
 
 
 #[tauri::command]
-fn login(master_key: String) -> Result<Vault, String> {
+fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vault, String> {
 
   let mk_hash = sha256(master_key.as_bytes());
 
@@ -69,12 +166,15 @@ fn login(master_key: String) -> Result<Vault, String> {
 
   let mut raw_auk : Vec<u8> = sk.iter().zip(mk_hash).map(|(x, y)| x ^ y).collect();
 
-  let conn = Connection::open("./db/database.db").unwrap();
+  let mut context = state.lock().unwrap();
+
+  context.logged_in = true;
+
+  let conn = context.db.as_ref().unwrap();
 
   conn.pragma_update(None, "key", base64::encode(&raw_auk)).unwrap();
 
   raw_auk.zeroize();
-
 
   let mut passwords_stmt = conn.prepare("SELECT * FROM Password").unwrap();
 
@@ -104,7 +204,6 @@ fn login(master_key: String) -> Result<Vault, String> {
 
   }).unwrap();
 
-
   let user_data = user_data_iter.next().unwrap();
 
   let mut passwords = Vec::new();
@@ -112,6 +211,8 @@ fn login(master_key: String) -> Result<Vault, String> {
   for password in passwords_stmt_iter {
     passwords.push(password.unwrap());
   }
+
+  conn.pragma_update(None, "key", "").unwrap();
 
 
   Ok(Vault{
@@ -131,33 +232,13 @@ fn generate_mnemonic() -> Mnemonic {
 }
 
 #[tauri::command]
-fn setup_vault(master_key: String, pass_phrase: String) -> bool {
-
-  /*
-  Steps:
-  1. Generate Secret Key
-  2. Encrypt Secret Key with master key
-  3. Encrypt Secret Key with pass phrase as backup
-  4. Store Keys on disc
-  5. Setup account key
-  6. Setup sqlite database
-  7. generate private key for decrypting passwords
-  8. store user info in database
-  9. encrypt database
-  10. return to user that process is finished and redirect them to login
-
-  */
-
+fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phrase: String) -> bool {
 
   let mut buf = [0; 32];
 
   rand_bytes(&mut buf).unwrap(); // generate a secret key
 
-  println!("MK : {}", master_key);
-
   let master_key_hash = sha256(master_key.as_bytes());
-
-  println!("MK HASH: {}", base64::encode(&master_key_hash));
 
   let pass_phrase_hash = sha256(pass_phrase.as_bytes());
 
@@ -183,7 +264,7 @@ fn setup_vault(master_key: String, pass_phrase: String) -> bool {
   mk_hex.zeroize();
   pp_hex.zeroize();
   
-  let mut raw_auk : Vec<u8> = buf.iter().zip(master_key_hash).map(|(x, y)| x ^ y).collect(); // xor secret key with master key hash
+  let mut raw_auk : Vec<u8> = lib::crypto::generate_account_key(buf, master_key_hash).unwrap(); // xor secret key with master key hash
 
   buf.zeroize();
   
@@ -214,6 +295,14 @@ fn setup_vault(master_key: String, pass_phrase: String) -> bool {
 
   buf.zeroize();
 
+  conn.pragma_update(None, "key", "").unwrap();
+
+  let mut context = state.lock().unwrap();
+
+  context.account_key = SecStr::from(base64::encode(&raw_auk));
+
+  context.db = Some(conn);
+
   return true;
 }
 
@@ -240,4 +329,11 @@ struct UserData{
 struct Vault{
   user_data: UserData,
   passwords: Vec<Password>
+}
+
+
+
+#[derive(Debug)]
+struct AppContext{
+  
 }
