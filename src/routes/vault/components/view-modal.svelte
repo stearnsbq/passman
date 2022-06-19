@@ -1,13 +1,13 @@
 <script lang="ts">
     import Modal from './modal.svelte';
-    import PasswordInput from './password-input.svelte'
-    import IconInput from './icon-input.svelte';
     import { invoke } from "@tauri-apps/api/tauri";
+    import logo from '../../../assets/no-icon.png';
 
     export let show;
     export let vaultItem;
     let showPassword = false;
     let password = '';
+    let img;
 
     function revealPassword(){
         invoke("get_password", {id: vaultItem.password_id}).then((result: string) => {
@@ -15,6 +15,11 @@
             password = result;
         })
     }
+
+    function onImgError(){
+        img.src = logo;
+    }
+
 
     $: if(!show){
         showPassword = false;
@@ -36,7 +41,7 @@
         <div class="body">
 
             <div class="icon">
-                <IconInput bind:image={vaultItem.icon}></IconInput>
+                <img bind:this={img}  on:error={onImgError} src={vaultItem.icon} alt="Put Icon Here">
             </div>
          
             <div class="info-input">
@@ -107,5 +112,11 @@
         }
 
     }
+
+    img{
+            height: 100px;
+            width: 100px;
+            border-radius: 50%;
+        }
 
 </style>

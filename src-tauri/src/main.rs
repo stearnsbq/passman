@@ -7,10 +7,10 @@ extern crate rand;
 extern crate bip39;
 extern crate secstr;
 extern crate base64;
+extern crate argon2;
 
 use std::fs;
 use std::path;
-use std::str;
 use std::str::{from_utf8};
 use std::sync::{Mutex, Arc};
 use std::rc::{Rc};
@@ -20,10 +20,15 @@ use openssl::rand::rand_bytes;
 use openssl::symm::encrypt;
 use openssl::symm::decrypt;
 use openssl::symm::Cipher;
-use openssl::sha::sha256;
 use zeroize::Zeroize;
-use hex::ToHex;
 use rusqlite::{params, Connection, Result};
+use argon2::{
+  password_hash::{
+      rand_core::OsRng,
+      PasswordHash, PasswordHasher, SaltString
+  },
+  Argon2
+};
 
 mod lib;
 
@@ -163,22 +168,32 @@ fn is_vault_setup() -> bool {
 #[tauri::command]
 fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vault, String> {
 
-  let mk_hash = sha256(master_key.as_bytes());
+
 
   let keys_string = fs::read_to_string("./keys").unwrap();
 
+  let argon2 = Argon2::default();
+
   let mut keys = keys_string.lines();
 
-  let sk_cipher_hex = keys.next().unwrap();
+  let sk_cipher_b64 = keys.next().unwrap();
 
-  let sk_cipher_raw = base64::decode(sk_cipher_hex).unwrap();
+  let sk_cipher_raw = base64::decode(sk_cipher_b64).unwrap();
 
-  let sk = match decrypt(Cipher::aes_256_cbc(), &mk_hash, None, &sk_cipher_raw){
+  keys.next().unwrap();
+
+  let salt = keys.next().unwrap();
+
+  let mk_hash = argon2.hash_password(master_key.as_bytes(), &salt).unwrap();
+
+  let mk_hash_bytes = mk_hash.hash.unwrap();
+
+  let sk = match decrypt(Cipher::aes_256_cbc(), &mk_hash_bytes.as_bytes(), None, &sk_cipher_raw){
     Ok(plain) => plain,
     Err(error) => panic!("Error while decrypting secret key: {}", error)
   };
 
-  let mut raw_auk : Vec<u8> = sk.iter().zip(mk_hash).map(|(x, y)| x ^ y).collect();
+  let mut raw_auk : Vec<u8> = sk.iter().zip(mk_hash_bytes.as_bytes()).map(|(x, y)| x ^ y).collect();
 
   let mut context = state.lock().unwrap();
 
@@ -252,16 +267,23 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
 
   rand_bytes(&mut buf).unwrap(); // generate a secret key
 
-  let master_key_hash = sha256(master_key.as_bytes());
+  let salt = SaltString::generate(&mut OsRng); // generate salt
 
-  let pass_phrase_hash = sha256(pass_phrase.as_bytes());
+  let argon2 = Argon2::default();
 
-  let mut master_key_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &master_key_hash, None, &buf) {
+  let master_key_hash = argon2.hash_password(master_key.as_bytes(), &salt).unwrap();
+
+  let pass_phrase_hash = argon2.hash_password(pass_phrase.as_bytes(), &salt).unwrap();
+
+
+  let mk_hash_bytes = master_key_hash.hash.unwrap();
+
+  let mut master_key_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &mk_hash_bytes.as_bytes(), None, &buf) {
     Ok(cipher) => cipher,
     Err(error) => panic!("Failed to create cipher text {:?}", error),
   };
 
-  let mut pass_phrase_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &pass_phrase_hash, None, &buf) {
+  let mut pass_phrase_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &pass_phrase_hash.hash.unwrap().as_bytes(), None, &buf) {
     Ok(cipher) => cipher,
     Err(error) => panic!("Failed to create cipher text {:?}", error),
   };
@@ -273,12 +295,12 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
   pass_phrase_private_key_cipher_text.zeroize();
 
 
-  fs::write("./keys", format!("{}\n{}", mk_hex, pp_hex)).expect("Unable to write key file");
+  fs::write("./keys", format!("{}\n{}\n{}", mk_hex, pp_hex, salt.as_str())).expect("Unable to write key file");
 
   mk_hex.zeroize();
   pp_hex.zeroize();
   
-  let mut raw_auk : Vec<u8> = lib::crypto::generate_account_key(buf, master_key_hash).unwrap(); // xor secret key with master key hash
+  let mut raw_auk : Vec<u8> = lib::crypto::generate_account_key(&buf, mk_hash_bytes.as_bytes()).unwrap(); // xor secret key with master key hash
 
   buf.zeroize();
   
@@ -296,7 +318,6 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
   }
 
   rand_bytes(&mut buf).unwrap(); // generate a vault key
-
 
 
   match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(buf), lib::time::get_current_secs()]){
