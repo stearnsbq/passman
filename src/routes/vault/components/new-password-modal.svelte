@@ -17,12 +17,8 @@
     function onCreate() {
 
         invoke("add_new_password", {source, username, password, image}).then((result) => {
-
-
             dispatch('new-password');
             show = false;
-
-
         })
 
     }

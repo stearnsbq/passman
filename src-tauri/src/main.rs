@@ -11,6 +11,7 @@ extern crate base64;
 use std::fs;
 use std::path;
 use std::str;
+use std::str::{from_utf8};
 use std::sync::{Mutex, Arc};
 use std::rc::{Rc};
 use secstr::*;
@@ -38,8 +39,6 @@ struct Context{
 
 fn main() {
 
-
-
   let mut context = Context{
     db: Default::default(),
     logged_in: false,
@@ -60,10 +59,36 @@ fn main() {
 
   tauri::Builder::default()
   .manage(Mutex::new(context))
-  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup, logout, generate_password, add_new_password])
+  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup, logout, generate_password, add_new_password, get_password])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 
+}
+
+
+#[tauri::command]
+fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> String {
+
+  let context = state.lock().expect("Failed to acquire lock on context");
+  
+  if !context.logged_in {
+    panic!("Not logged in")
+  }
+
+  let conn = context.db.as_ref().unwrap();
+
+  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
+
+  let password : String = conn.query_row("SELECT * FROM Password WHERE password_id = ?", params![id], |row| {row.get(3)}).unwrap();
+
+  let vault_key : String = conn.query_row("SELECT * FROM UserData LIMIT 1", [], |row| {row.get(1)}).unwrap();
+
+  let password_plain_text = match decrypt(Cipher::aes_256_cbc(), &base64::decode(vault_key).unwrap(), None, &base64::decode(password).unwrap()) {
+    Ok(pt) => pt,
+    Err(error) => panic!("Failed to create cipher text {:?}", error),
+  };
+
+  return String::from(from_utf8(&password_plain_text).unwrap());
 }
 
 #[tauri::command]
@@ -82,12 +107,11 @@ fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, usernam
 
   let mut user_data_stmt = conn.prepare("SELECT * FROM UserData").unwrap();
 
-  let mut user_data_iter = user_data_stmt.query_map([], |row| {
-    row.get(1)
 
+  let user_data : String = user_data_stmt.query_row([], |row| {
+    row.get(1)
   }).unwrap();
 
-  let user_data : String = user_data_iter.next().unwrap().unwrap();
 
   let mut key = base64::decode(user_data).unwrap();
 

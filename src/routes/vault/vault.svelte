@@ -3,11 +3,10 @@
   import { onMount } from "svelte";
   import Menu from "./components/menu.svelte";
   import Modal from "./components/modal.svelte";
-  import PasswordInput from "./components/password-input.svelte";
-  import IconInput from "./components/icon-input.svelte";
   import NewPasswordModal from "./components/new-password-modal.svelte";
   import { listen, idle, onIdle } from "svelte-idle";
   import logo from "../../assets/no-icon.png";
+  import ViewModal from './components/view-modal.svelte'
 
   // start idle listener
   listen({
@@ -27,6 +26,8 @@
   let showPasswordGenModal = false;
   let showPasswordStrengthModal = false;
   let showNewPasswordModal = false;
+  let showViewModal = false;
+  let currentVaultItem;
 
   function onNewPassword() {
     showNewPasswordModal = true;
@@ -61,6 +62,8 @@
   }
 </script>
 
+<ViewModal bind:show={showViewModal} vaultItem={currentVaultItem} />
+
 <NewPasswordModal bind:show={showNewPasswordModal} />
 
 <Modal bind:show={showPasswordGenModal} />
@@ -86,7 +89,7 @@
     {#if vault}
       <ul>
         {#each vault.passwords as password}
-          <li>
+          <li on:click={e => {currentVaultItem = password; showViewModal = true}}>
             <div class="password-list-item">
               <div class="list-item-icon">
                 <img
