@@ -7,7 +7,8 @@
   import { listen, idle, onIdle } from "svelte-idle";
   import logo from "../../assets/no-icon.png";
   import ViewModal from "./components/view-modal.svelte";
-  import PasswordInput from "./components/password-input.svelte";
+  import PasswordCheckerModal from './components/password-checker.svelte'
+  import GeneratePasswordModal from './components/generate-password.svelte'
 
   // start idle listener
   listen({
@@ -71,17 +72,10 @@
 
 <NewPasswordModal on:message={handleMessage} bind:show={showNewPasswordModal} />
 
-<Modal bind:show={showPasswordGenModal} />
+<GeneratePasswordModal bind:show={showPasswordGenModal} />
 
-<Modal bind:show={showPasswordStrengthModal}>
-  <div class="strength-checker">
-    <div class="checker-header">
-      <h2>Strength Checker</h2>
-    </div>
+<PasswordCheckerModal bind:show={showPasswordStrengthModal}  />
 
-    <PasswordInput showFeedback={true} />
-  </div>
-</Modal>
 
 <div class="vault-content">
   <header class="header">
@@ -243,21 +237,6 @@
     }
   }
 
-  .checker-header {
-    display: flex;
-    justify-content: center;
-    h2 {
-      color: white;
-      padding: 0;
-      margin: 0;
-    }
-  }
 
-  .strength-checker{
-    display: flex;
-    width: 350px;
-    flex-direction: column;
-    gap: 15px;
-  }
 
 </style>

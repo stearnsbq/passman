@@ -1,6 +1,6 @@
 <script lang="ts">
   import zxcvbn from "zxcvbn";
-  import { invoke } from "@tauri-apps/api/tauri";
+
 
   let meter = 0;
   export let password = "";

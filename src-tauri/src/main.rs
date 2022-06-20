@@ -19,6 +19,10 @@ use openssl::rand::rand_bytes;
 use openssl::symm::encrypt;
 use openssl::symm::decrypt;
 use openssl::symm::Cipher;
+use types::Context;
+use types::Password;
+use types::UserData;
+use types::Vault;
 use zeroize::Zeroize;
 use rusqlite::{params, Connection, Result};
 use argon2::{
@@ -30,13 +34,7 @@ use argon2::{
 };
 
 mod lib;
-
-#[derive(Debug)]
-struct Context{
-  db: Option<Connection>,
-  logged_in: bool,
-  account_key: secstr::SecStr
-}
+mod types;
 
 
 
@@ -401,31 +399,4 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
 
   return true;
 }
-
-
-
-#[derive(Debug, serde::Serialize)]
-struct Password{
-  password_id: u32,
-  username: String,
-  source: String,
-  added: u32,
-  icon: String
-}
-
-
-#[derive(Debug, serde::Serialize)]
-struct UserData{
-  userdata_id : u32,
-  last_unlock: u32,
-}
-
-
-#[derive(Debug, serde::Serialize)]
-struct Vault{
-  user_data: UserData,
-  passwords: Vec<Password>
-}
-
-
 
