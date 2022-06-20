@@ -13,6 +13,8 @@ use std::fs;
 use std::path;
 use std::str::{from_utf8};
 use std::sync::{Mutex};
+use lib::db::get_passwords;
+use lib::util::acquire_context_lock;
 use secstr::*;
 use bip39::{Mnemonic, Language};
 use openssl::rand::rand_bytes;
@@ -68,7 +70,7 @@ fn main() {
 }
 
 #[tauri::command]
-fn get_vault(state: tauri::State<Mutex<Context>>) -> Vec<Password>{
+fn get_vault(state: tauri::State<Mutex<Context>>) -> Result<Vec<Password>, String>{
 
   let context = state.lock().expect("Failed to acquire lock on context");
 
@@ -76,34 +78,29 @@ fn get_vault(state: tauri::State<Mutex<Context>>) -> Vec<Password>{
     panic!("Not logged in")
   }
 
-  let conn = context.db.as_ref().unwrap();
+  let context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(err) => return Err("Failed to acquire context".into()),
+  };
 
+  let conn = match context.db.as_ref() {
+    Some(conn) => conn,
+    None => return Err("Failed to get database reference".into()),
+  };
 
-  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
+  match conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())){
+    Ok(_) => "",
+    Err(_) => return Err("Failed to update key pragma".into())
+  };
 
-  let mut passwords_stmt = conn.prepare("SELECT * FROM Password").unwrap();
-
-  let passwords_stmt_iter = passwords_stmt.query_map([], |row| {
-    Ok(
-      Password{
-        password_id: row.get(0)?,
-        source: row.get(1)?,
-        username: row.get(2)?,
-        added: row.get(4)?,
-        icon: row.get(5)?
-      }
-    )
-  }).unwrap();
-
-  let mut passwords = Vec::new();
-
-  for password in passwords_stmt_iter {
-    passwords.push(password.unwrap());
-  }
+  let passwords = match get_passwords(conn){
+    Ok(passwords) => passwords,
+    Err(_) => return Err("Failed to get passwords".into()),
+  };
 
   conn.pragma_update(None, "key", "").unwrap();
 
-  return passwords;
+  return Ok(passwords);
 
 }
 
