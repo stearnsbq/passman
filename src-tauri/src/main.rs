@@ -12,8 +12,7 @@ extern crate argon2;
 use std::fs;
 use std::path;
 use std::str::{from_utf8};
-use std::sync::{Mutex, Arc};
-use std::rc::{Rc};
+use std::sync::{Mutex};
 use secstr::*;
 use bip39::{Mnemonic, Language};
 use openssl::rand::rand_bytes;
@@ -25,7 +24,7 @@ use rusqlite::{params, Connection, Result};
 use argon2::{
   password_hash::{
       rand_core::OsRng,
-      PasswordHash, PasswordHasher, SaltString
+      PasswordHasher, SaltString
   },
   Argon2
 };
@@ -64,12 +63,72 @@ fn main() {
 
   tauri::Builder::default()
   .manage(Mutex::new(context))
-  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup, logout, generate_password, add_new_password, get_password])
+  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup, logout, generate_password, add_new_password, get_password, remove_password, get_vault])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 
 }
 
+#[tauri::command]
+fn get_vault(state: tauri::State<Mutex<Context>>) -> Vec<Password>{
+
+  let context = state.lock().expect("Failed to acquire lock on context");
+
+  if !context.logged_in {
+    panic!("Not logged in")
+  }
+
+  let conn = context.db.as_ref().unwrap();
+
+
+  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
+
+  let mut passwords_stmt = conn.prepare("SELECT * FROM Password").unwrap();
+
+  let passwords_stmt_iter = passwords_stmt.query_map([], |row| {
+    Ok(
+      Password{
+        password_id: row.get(0)?,
+        source: row.get(1)?,
+        username: row.get(2)?,
+        added: row.get(4)?,
+        icon: row.get(5)?
+      }
+    )
+  }).unwrap();
+
+  let mut passwords = Vec::new();
+
+  for password in passwords_stmt_iter {
+    passwords.push(password.unwrap());
+  }
+
+  conn.pragma_update(None, "key", "").unwrap();
+
+  return passwords;
+
+}
+
+#[tauri::command]
+fn remove_password(state: tauri::State<Mutex<Context>>, id: u32){
+
+  let context = state.lock().expect("Failed to acquire lock on context");
+
+  if !context.logged_in {
+    panic!("Not logged in")
+  }
+
+  let conn = context.db.as_ref().unwrap();
+
+  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
+  
+
+  conn.execute("DELETE FROM Password WHERE password_id = ?", params![id]).unwrap();
+
+
+  conn.pragma_update(None, "key", "").unwrap();
+
+}
 
 #[tauri::command]
 fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> String {
@@ -320,7 +379,12 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
   rand_bytes(&mut buf).unwrap(); // generate a vault key
 
 
-  match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(buf), lib::time::get_current_secs()]){
+  let vault_key_salt = &SaltString::generate(&mut OsRng);
+
+  let vault_key = argon2.hash_password(&buf, vault_key_salt).unwrap();
+
+
+  match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(vault_key.hash.unwrap().as_bytes()), lib::time::get_current_secs()]){
     Ok(_) => println!("Inserted Item!"),
     Err(error) => panic!("Err: {}", error)
   }
@@ -365,7 +429,3 @@ struct Vault{
 
 
 
-#[derive(Debug)]
-struct AppContext{
-  
-}

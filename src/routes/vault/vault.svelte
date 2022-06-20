@@ -6,7 +6,8 @@
   import NewPasswordModal from "./components/new-password-modal.svelte";
   import { listen, idle, onIdle } from "svelte-idle";
   import logo from "../../assets/no-icon.png";
-  import ViewModal from './components/view-modal.svelte'
+  import ViewModal from "./components/view-modal.svelte";
+  import PasswordInput from "./components/password-input.svelte";
 
   // start idle listener
   listen({
@@ -51,6 +52,10 @@
     (e as any).target.src = logo;
   }
 
+  function handleMessage(event) {
+    console.log(event);
+  }
+
   $: {
     // if($idle){
     //     alert("Are you still there? You will be logged out in 30 seconds if no activity is detected!")
@@ -64,11 +69,19 @@
 
 <ViewModal bind:show={showViewModal} vaultItem={currentVaultItem} />
 
-<NewPasswordModal bind:show={showNewPasswordModal} />
+<NewPasswordModal on:message={handleMessage} bind:show={showNewPasswordModal} />
 
 <Modal bind:show={showPasswordGenModal} />
 
-<Modal bind:show={showPasswordStrengthModal} />
+<Modal bind:show={showPasswordStrengthModal}>
+  <div class="strength-checker">
+    <div class="checker-header">
+      <h2>Strength Checker</h2>
+    </div>
+
+    <PasswordInput showFeedback={true} />
+  </div>
+</Modal>
 
 <div class="vault-content">
   <header class="header">
@@ -89,7 +102,12 @@
     {#if vault}
       <ul>
         {#each vault.passwords as password}
-          <li on:click={e => {currentVaultItem = password; showViewModal = true}}>
+          <li
+            on:click={(e) => {
+              currentVaultItem = password;
+              showViewModal = true;
+            }}
+          >
             <div class="password-list-item">
               <div class="list-item-icon">
                 <img
@@ -178,18 +196,17 @@
       justify-content: center;
       align-items: center;
       flex-direction: column;
-    gap: 10px;
+      gap: 10px;
 
-      h3{
+      h3 {
         margin: 0;
         padding: 0;
       }
 
-      p{
+      p {
         margin: 0;
         color: rgba($color: white, $alpha: 0.6);
       }
-
     }
 
     .password-list-item {
@@ -225,4 +242,22 @@
       }
     }
   }
+
+  .checker-header {
+    display: flex;
+    justify-content: center;
+    h2 {
+      color: white;
+      padding: 0;
+      margin: 0;
+    }
+  }
+
+  .strength-checker{
+    display: flex;
+    width: 350px;
+    flex-direction: column;
+    gap: 15px;
+  }
+
 </style>

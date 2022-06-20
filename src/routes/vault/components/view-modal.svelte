@@ -20,6 +20,12 @@
         img.src = logo;
     }
 
+    function onDelete(){
+        invoke("remove_password", {id: vaultItem.password_id}).then((result: string) => {
+            show = false;
+        })
+    }
+
 
     $: if(!show){
         showPassword = false;
@@ -59,7 +65,8 @@
 
                 {/if}
 
-                <!-- <PasswordInput bind:password={password} ></PasswordInput> -->
+
+                <button on:click={onDelete}>Delete</button>
     
             </div>
     
