@@ -14,6 +14,8 @@ use std::path;
 use std::str::{from_utf8};
 use std::sync::{Mutex};
 use lib::db::get_passwords;
+use lib::db::get_userdata;
+use lib::db::get_vault_key;
 use lib::util::acquire_context_lock;
 use secstr::*;
 use bip39::{Mnemonic, Language};
@@ -72,15 +74,9 @@ fn main() {
 #[tauri::command]
 fn get_vault(state: tauri::State<Mutex<Context>>) -> Result<Vec<Password>, String>{
 
-  let context = state.lock().expect("Failed to acquire lock on context");
-
-  if !context.logged_in {
-    panic!("Not logged in")
-  }
-
   let context = match acquire_context_lock(&state) {
     Ok(ctx) => ctx,
-    Err(err) => return Err("Failed to acquire context".into()),
+    Err(_) => return Err("Failed to acquire context".into()),
   };
 
   let conn = match context.db.as_ref() {
@@ -88,17 +84,11 @@ fn get_vault(state: tauri::State<Mutex<Context>>) -> Result<Vec<Password>, Strin
     None => return Err("Failed to get database reference".into()),
   };
 
-  match conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())){
-    Ok(_) => "",
-    Err(_) => return Err("Failed to update key pragma".into())
-  };
 
-  let passwords = match get_passwords(conn){
+  let passwords = match sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<Vec<Password>, String> {get_passwords(conn)}){
     Ok(passwords) => passwords,
-    Err(_) => return Err("Failed to get passwords".into()),
+    Err(err) => return Err(err)
   };
-
-  conn.pragma_update(None, "key", "").unwrap();
 
   return Ok(passwords);
 
@@ -126,91 +116,109 @@ fn remove_password(state: tauri::State<Mutex<Context>>, id: u32){
 }
 
 #[tauri::command]
-fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> String {
+fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> Result<String, String> {
 
-  let context = state.lock().expect("Failed to acquire lock on context");
+  let context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
+  };
+
+  let conn = match context.db.as_ref() {
+    Some(conn) => conn,
+    None => return Err("Failed to get database reference".into()),
+  };
+
+
+  let password: String = match sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<String, String> {
+
+    let password : String = conn.query_row("SELECT * FROM Password WHERE password_id = ?", params![id], |row| {row.get(3)}).unwrap();
+
+    let vault_key : String = conn.query_row("SELECT * FROM UserData LIMIT 1", [], |row| {row.get(1)}).unwrap();
   
-  if !context.logged_in {
-    panic!("Not logged in")
-  }
+    let password_pt = match decrypt(Cipher::aes_256_cbc(), &base64::decode(vault_key).unwrap(), None, &base64::decode(password).unwrap()) {
+      Ok(pt) => pt,
+      Err(_) => return Err("Failed to create cipher text".into()),
+    };
 
-  let conn = context.db.as_ref().unwrap();
+    let password_string = match from_utf8(&password_pt) {
+      Ok(str) => str,
+      Err(_) => return Err("Failed to parse plain text bytes into string".into()),
+    };
 
-  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
+    Ok(String::from(password_string))
+  }){
+    Ok(str) => str,
+    Err(err) => return Err(err)
+  }; 
 
-  let password : String = conn.query_row("SELECT * FROM Password WHERE password_id = ?", params![id], |row| {row.get(3)}).unwrap();
 
-  let vault_key : String = conn.query_row("SELECT * FROM UserData LIMIT 1", [], |row| {row.get(1)}).unwrap();
+  Ok(password)
+}
 
-  let password_plain_text = match decrypt(Cipher::aes_256_cbc(), &base64::decode(vault_key).unwrap(), None, &base64::decode(password).unwrap()) {
-    Ok(pt) => pt,
-    Err(error) => panic!("Failed to create cipher text {:?}", error),
+#[tauri::command]
+fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, username: String, password: String, image: String) -> Result<(), String> {
+  
+  let context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
   };
 
-  return String::from(from_utf8(&password_plain_text).unwrap());
-}
 
-#[tauri::command]
-fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, username: String, password: String, image: String){
-  let context = state.lock().unwrap();
-
-  if !context.logged_in {
-    return;
-  }
-
-  let conn = context.db.as_ref().unwrap();
-
-  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
-
-  // encrypt the password
-
-  let mut user_data_stmt = conn.prepare("SELECT * FROM UserData").unwrap();
-
-
-  let user_data : String = user_data_stmt.query_row([], |row| {
-    row.get(1)
-  }).unwrap();
-
-
-  let mut key = base64::decode(user_data).unwrap();
-
-  let password_cipher_text = match encrypt(Cipher::aes_256_cbc(), &key, None, &password.as_bytes()) {
-    Ok(cipher) => cipher,
-    Err(error) => panic!("Failed to create cipher text {:?}", error),
+  let conn = match context.db.as_ref() {
+    Some(conn) => conn,
+    None => return Err("Failed to get database reference".into()),
   };
 
-  key.zeroize();
 
-  match conn.execute("INSERT INTO Password (source, username, password, added, icon) VALUES (?1, ?2, ?3, ?4, ?5)", params![source, username, base64::encode(password_cipher_text), lib::time::get_current_secs(), image]){
-    Ok(_) => println!("Inserted New Password Item!"),
-    Err(error) => panic!("Err: {}", error)
-  }
+  return sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<(), String>  {
 
-  conn.pragma_update(None, "key", "").unwrap();
+    let mut key = match get_vault_key(conn){
+      Ok(key) => key,
+      Err(e) => return Err(e)
+    };
+  
+    let password_cipher_text = match encrypt(Cipher::aes_256_cbc(), &key, None, &password.as_bytes()) {
+      Ok(cipher) => cipher,
+      Err(_) => return Err("failed to encrypt password".into()),
+    };
+  
+    key.zeroize();
+  
+    match conn.execute("INSERT INTO Password (source, username, password, added, icon) VALUES (?1, ?2, ?3, ?4, ?5)", params![source, username, base64::encode(password_cipher_text), lib::time::get_current_secs(), image]){
+      Ok(_) => println!("Inserted New Password Item!"),
+      Err(_) => return Err("Failed to insert password into vault".into())
+    }
+
+
+    Ok(())
+  });
 
 }
 
 #[tauri::command]
-fn generate_password(state: tauri::State<Mutex<Context>>) -> String{
+fn generate_password(state: tauri::State<Mutex<Context>>) -> Result<String, String>{
 
-  let context = state.lock().unwrap();
+  let _context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
+  };
 
-  if context.logged_in {
-    return lib::crypto::generate_password();
-  }
-
-  return String::from("");
+  Ok(lib::crypto::generate_password())
 }
 
 #[tauri::command]
-fn logout(state: tauri::State<Mutex<Context>>)  {
+fn logout(state: tauri::State<Mutex<Context>>) -> Result<(), String>  {
 
-  let mut context = state.lock().unwrap();
+  let mut context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
+  };
 
   context.logged_in = false;
 
   context.account_key.zero_out();
 
+  Ok(())
 }
 
 #[tauri::command]
@@ -218,13 +226,13 @@ fn is_vault_setup() -> bool {
   return path::Path::new("./db/database.db").exists() && path::Path::new("./keys").exists();
 }
 
-
 #[tauri::command]
 fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vault, String> {
 
-
-
-  let keys_string = fs::read_to_string("./keys").unwrap();
+  let keys_string = match fs::read_to_string("./keys"){
+    Ok(str) => str,
+    Err(_) => return Err("Failed to read keys file".into())
+  };
 
   let argon2 = Argon2::default();
 
@@ -232,13 +240,19 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
 
   let sk_cipher_b64 = keys.next().unwrap();
 
-  let sk_cipher_raw = base64::decode(sk_cipher_b64).unwrap();
+  let sk_cipher_raw = match base64::decode(sk_cipher_b64) {
+    Ok(raw) => raw,
+    Err(_) => return Err("Failed to decode secret key".into())
+  };
 
   keys.next().unwrap();
 
   let salt = keys.next().unwrap();
 
-  let mk_hash = argon2.hash_password(master_key.as_bytes(), &salt).unwrap();
+  let mk_hash = match argon2.hash_password(master_key.as_bytes(), &salt){
+    Ok(hash) => hash,
+    Err(_) => return Err("Failed to hash master key".into())
+  };
 
   let mk_hash_bytes = mk_hash.hash.unwrap();
 
@@ -249,69 +263,58 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
 
   let mut raw_auk : Vec<u8> = sk.iter().zip(mk_hash_bytes.as_bytes()).map(|(x, y)| x ^ y).collect();
 
-  let mut context = state.lock().unwrap();
+  let mut context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
+  };
 
   context.logged_in = true;
 
-  let conn = context.db.as_ref().unwrap();
+  let conn = match context.db.as_ref() {
+    Some(conn) => conn,
+    None => return Err("Failed to get database reference".into()),
+  };
 
-  conn.pragma_update(None, "key", base64::encode(&raw_auk)).unwrap();
 
   raw_auk.zeroize();
 
-  let mut passwords_stmt = conn.prepare("SELECT * FROM Password").unwrap();
+  let vault = match sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<Vault, String> {
 
-  let passwords_stmt_iter = passwords_stmt.query_map([], |row| {
-    Ok(
-      Password{
-        password_id: row.get(0)?,
-        source: row.get(1)?,
-        username: row.get(2)?,
-        added: row.get(4)?,
-        icon: row.get(5)?
-      }
-    )
-  }).unwrap();
+    let passwords = match get_passwords(conn){
+      Ok(pwds) => pwds,
+      Err(err) => return Err(err)
+    };
 
+    let user_data = match get_userdata(conn) {
+      Ok(ud) => ud,
+      Err(err) => return Err(err)
+    };
 
-  let mut user_data_stmt = conn.prepare("SELECT * FROM UserData").unwrap();
+    Ok(Vault{
+      passwords: passwords,
+      user_data: user_data
+    })
 
-  let mut user_data_iter = user_data_stmt.query_map([], |row| {
-    Ok(
-      UserData{
-        userdata_id: row.get(0)?,
-        last_unlock: row.get(2)?,
-      }
-    )
+  }){
+    Ok(vault) => vault,
+    Err(err) => return Err(err)
+  };
 
-
-  }).unwrap();
-
-  let user_data = user_data_iter.next().unwrap();
-
-  let mut passwords = Vec::new();
-
-  for password in passwords_stmt_iter {
-    passwords.push(password.unwrap());
-  }
-
-  conn.pragma_update(None, "key", "").unwrap();
-
-
-  Ok(Vault{
-    user_data: user_data.unwrap(),
-    passwords: passwords
-  })
+  Ok(vault)
+  
 }
 
 #[tauri::command]
-fn generate_mnemonic() -> Mnemonic {
+fn generate_mnemonic() -> Result<Mnemonic, String> {
 
   let mut rng = rand::thread_rng();
 
-  let phrase = Mnemonic::generate_in_with(&mut rng, Language::English, 12).unwrap();
+  let phrase = match Mnemonic::generate_in_with(&mut rng, Language::English, 12){
+    Ok(phr) => phr,
+    Err(_) => return Err("Failed to generate mnemonic phrase".into())
+  };
 
-  return phrase;
+  Ok(phrase)
 }
 
 #[tauri::command]
