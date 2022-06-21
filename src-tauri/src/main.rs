@@ -95,23 +95,28 @@ fn get_vault(state: tauri::State<Mutex<Context>>) -> Result<Vec<Password>, Strin
 }
 
 #[tauri::command]
-fn remove_password(state: tauri::State<Mutex<Context>>, id: u32){
+fn remove_password(state: tauri::State<Mutex<Context>>, id: u32) -> Result<(), String>{
 
-  let context = state.lock().expect("Failed to acquire lock on context");
+  let context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
+  };
 
-  if !context.logged_in {
-    panic!("Not logged in")
-  }
-
-  let conn = context.db.as_ref().unwrap();
-
-  conn.pragma_update(None, "key", base64::encode(context.account_key.unsecure())).unwrap();
-  
-
-  conn.execute("DELETE FROM Password WHERE password_id = ?", params![id]).unwrap();
+  let conn = match context.db.as_ref() {
+    Some(conn) => conn,
+    None => return Err("Failed to get database reference".into()),
+  };
 
 
-  conn.pragma_update(None, "key", "").unwrap();
+  sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<(), String> {
+
+    match conn.execute("DELETE FROM Password WHERE password_id = ?", params![id]){
+      Ok(_) => (),
+      Err(_) => return Err("Failed to delete password".into())
+    };
+
+    Ok(())
+  })
 
 }
 
@@ -133,7 +138,10 @@ fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> Result<String, 
 
     let password : String = conn.query_row("SELECT * FROM Password WHERE password_id = ?", params![id], |row| {row.get(3)}).unwrap();
 
-    let vault_key : String = conn.query_row("SELECT * FROM UserData LIMIT 1", [], |row| {row.get(1)}).unwrap();
+    let vault_key : Vec<u8> = match get_vault_key(conn){
+      Ok(key) => key,
+      Err(e) => return Err(e)
+    };
   
     let password_pt = match decrypt(Cipher::aes_256_cbc(), &base64::decode(vault_key).unwrap(), None, &base64::decode(password).unwrap()) {
       Ok(pt) => pt,
@@ -318,31 +326,39 @@ fn generate_mnemonic() -> Result<Mnemonic, String> {
 }
 
 #[tauri::command]
-fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phrase: String) -> bool {
+fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phrase: String) -> Result<bool, String> {
 
   let mut buf = [0; 32];
 
-  rand_bytes(&mut buf).unwrap(); // generate a secret key
+  match rand_bytes(&mut buf){
+    Ok(_) => (),
+    Err(_) => return Err("Failed to generate secret key".into())
+  }; // generate a secret key
 
   let salt = SaltString::generate(&mut OsRng); // generate salt
 
   let argon2 = Argon2::default();
 
-  let master_key_hash = argon2.hash_password(master_key.as_bytes(), &salt).unwrap();
+  let master_key_hash = match argon2.hash_password(master_key.as_bytes(), &salt){
+    Ok(mk_hash) => mk_hash,
+    Err(_) => return Err("failed to hash master key".into())
+  };
 
-  let pass_phrase_hash = argon2.hash_password(pass_phrase.as_bytes(), &salt).unwrap();
-
+  let pass_phrase_hash = match argon2.hash_password(pass_phrase.as_bytes(), &salt){
+    Ok(pp_hash) => pp_hash,
+    Err(_) => return Err("failed to hash master key".into())
+  };
 
   let mk_hash_bytes = master_key_hash.hash.unwrap();
 
   let mut master_key_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &mk_hash_bytes.as_bytes(), None, &buf) {
     Ok(cipher) => cipher,
-    Err(error) => panic!("Failed to create cipher text {:?}", error),
+    Err(_) => return Err("failed to encrypt private key with master key hash".into()),
   };
 
   let mut pass_phrase_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &pass_phrase_hash.hash.unwrap().as_bytes(), None, &buf) {
     Ok(cipher) => cipher,
-    Err(error) => panic!("Failed to create cipher text {:?}", error),
+    Err(_) => return Err("failed to encrypt private key with pass phrase key hash".into()),
   };
 
   let mut mk_hex = base64::encode(&master_key_private_key_cipher_text);
@@ -352,51 +368,74 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
   pass_phrase_private_key_cipher_text.zeroize();
 
 
-  fs::write("./keys", format!("{}\n{}\n{}", mk_hex, pp_hex, salt.as_str())).expect("Unable to write key file");
+  match fs::write("./keys", format!("{}\n{}\n{}", mk_hex, pp_hex, salt.as_str())){
+    Ok(_) => (),
+    Err(_) => return Err("Unable to write key file".into())
+  };
 
   mk_hex.zeroize();
   pp_hex.zeroize();
   
-  let mut raw_auk : Vec<u8> = lib::crypto::generate_account_key(&buf, mk_hash_bytes.as_bytes()).unwrap(); // xor secret key with master key hash
+  let mut raw_auk : Vec<u8> = match lib::crypto::generate_account_key(&buf, mk_hash_bytes.as_bytes()){
+    Ok(auk) => auk,
+    Err(e) => return Err(e.to_string())
+  }; // xor secret key with master key hash
 
   buf.zeroize();
   
-  let conn = Connection::open("./db/database.db").unwrap();
+  let conn = match Connection::open("./db/database.db"){
+    Ok(conn) => conn,
+    Err(_) => return Err("failed to open database".into())
+  };
 
-  conn.pragma_update(None, "key", base64::encode(&raw_auk)).unwrap();
+  match sqlcipher_block!(conn, base64::encode(&raw_auk), || -> Result<(), String> {
 
-  raw_auk.zeroize();
+    raw_auk.zeroize();
 
-  let init_sql = fs::read_to_string("./db/init.sql").unwrap();
+    let init_sql = match fs::read_to_string("./db/init.sql"){
+      Ok(sql) => sql,
+      Err(_) => return Err("failed to read init sql file".into())
+    };
 
-  match conn.execute_batch(&init_sql){
-    Ok(_) => println!("Created Tables!"),
-    Err(error) => panic!("Err: {}", error)
+    match conn.execute_batch(&init_sql){
+      Ok(_) => println!("Created Tables!"),
+      Err(error) => panic!("Err: {}", error)
+    }
+
+    match rand_bytes(&mut buf){
+      Ok(_) => (),
+      Err(_) => return Err("Failed to generate vault key".into())
+    }; // generate a vault key
+
+    let vault_key_salt = &SaltString::generate(&mut OsRng);
+
+    let vault_key = match argon2.hash_password(&buf, vault_key_salt){
+      Ok(hash) => hash,
+      Err(_) => return Err("failed hashing vault key".into())
+    };
+
+    match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(vault_key.hash.unwrap().as_bytes()), lib::time::get_current_secs()]){
+      Ok(_) => println!("Inserted Item!"),
+      Err(_) => return Err("failed inserting user data into database".into())
+    }
+
+    buf.zeroize();
+
+    Ok(())
+  }){
+    Ok(_) => (),
+    Err(e) => return Err(e)
   }
 
-  rand_bytes(&mut buf).unwrap(); // generate a vault key
-
-
-  let vault_key_salt = &SaltString::generate(&mut OsRng);
-
-  let vault_key = argon2.hash_password(&buf, vault_key_salt).unwrap();
-
-
-  match conn.execute("INSERT INTO UserData (vault_key, last_unlock) VALUES (?1, ?2)", params![base64::encode(vault_key.hash.unwrap().as_bytes()), lib::time::get_current_secs()]){
-    Ok(_) => println!("Inserted Item!"),
-    Err(error) => panic!("Err: {}", error)
-  }
-
-  buf.zeroize();
-
-  conn.pragma_update(None, "key", "").unwrap();
-
-  let mut context = state.lock().unwrap();
+  let mut context = match acquire_context_lock(&state) {
+    Ok(ctx) => ctx,
+    Err(_) => return Err("Failed to acquire context".into()),
+  };
 
   context.account_key = SecStr::from(base64::encode(&raw_auk));
 
   context.db = Some(conn);
 
-  return true;
+  Ok(true)
 }
 
