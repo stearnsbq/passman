@@ -13,7 +13,7 @@ import { navigate, Router } from "svelte-routing";
 
   // start idle listener
   listen({
-    timer: 3000,
+    timer: 300000,
   });
 
   let idleTimeout;
@@ -70,7 +70,7 @@ import { navigate, Router } from "svelte-routing";
             
           })
 
-        }, 5000);
+        }, 30000);
     }else{
         console.log("not idle")
         clearTimeout(idleTimeout)

@@ -11,7 +11,7 @@
 
   const passwordValidator = new validator()
     .is()
-    .min(8)
+    .min(7)
     .has()
     .uppercase(1)
     .lowercase(1)

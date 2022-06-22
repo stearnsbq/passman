@@ -1,12 +1,5 @@
 use rand::{seq::SliceRandom, thread_rng};
 
-pub fn generate_account_key(master_key_hash: &[u8], secret_key: &[u8]) -> Result<Vec<u8>, &'static str>{
-
-    let auk : Vec<u8> = secret_key.iter().zip(master_key_hash).map(|(x, y)| x ^ y).collect();
-
-    Ok(auk)
-}
-
 
 pub fn generate_password() -> String {
     let char_array = generate_char_array();

@@ -81,7 +81,7 @@ fn get_vault(state: tauri::State<Mutex<Context>>) -> Result<Vec<Password>, Strin
   };
 
 
-  let passwords = match sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<Vec<Password>, String> {get_passwords(conn)}){
+  let passwords = match sqlcipher_block!(conn, from_utf8(context.account_key.unsecure()).unwrap(), || -> Result<Vec<Password>, String> {get_passwords(conn)}){
     Ok(passwords) => passwords,
     Err(err) => return Err(err)
   };
@@ -104,7 +104,7 @@ fn remove_password(state: tauri::State<Mutex<Context>>, id: u32) -> Result<(), S
   };
 
 
-  sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<(), String> {
+  sqlcipher_block!(conn, from_utf8(context.account_key.unsecure()).unwrap(), || -> Result<(), String> {
 
     match conn.execute("DELETE FROM Password WHERE password_id = ?", params![id]){
       Ok(_) => (),
@@ -130,7 +130,7 @@ fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> Result<String, 
   };
 
 
-  let password: String = match sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<String, String> {
+  let password: String = match sqlcipher_block!(conn, from_utf8(context.account_key.unsecure()).unwrap(), || -> Result<String, String> {
 
     let password : String = conn.query_row("SELECT * FROM Password WHERE password_id = ?", params![id], |row| {row.get(3)}).unwrap();
 
@@ -139,7 +139,7 @@ fn get_password(state: tauri::State<Mutex<Context>>, id: u32) -> Result<String, 
       Err(e) => return Err(e)
     };
   
-    let password_pt = match decrypt(Cipher::aes_256_cbc(), &base64::decode(vault_key).unwrap(), None, &base64::decode(password).unwrap()) {
+    let password_pt = match decrypt(Cipher::aes_256_cbc(), &vault_key, None, &base64::decode(password).unwrap()) {
       Ok(pt) => pt,
       Err(_) => return Err("Failed to create cipher text".into()),
     };
@@ -174,7 +174,7 @@ fn add_new_password(state: tauri::State<Mutex<Context>>, source: String, usernam
   };
 
 
-  return sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<(), String>  {
+  return sqlcipher_block!(conn, from_utf8(context.account_key.unsecure()).unwrap(), || -> Result<(), String>  {
 
     let mut key = match get_vault_key(conn){
       Ok(key) => key,
@@ -260,7 +260,7 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
 
   let sk = match decrypt(Cipher::aes_256_cbc(), &mk_hash_bytes.as_bytes(), None, &sk_cipher_raw){
     Ok(plain) => plain,
-    Err(error) => panic!("Error while decrypting secret key: {}", error)
+    Err(_) => return Err("failed to decrypt secret key".into())
   };
 
   let mut raw_auk : Vec<u8> = sk.iter().zip(mk_hash_bytes.as_bytes()).map(|(x, y)| x ^ y).collect();
@@ -346,10 +346,7 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String) -> Resul
 
   mk_b64.zeroize();
 
-  let mut raw_auk : Vec<u8> = match lib::crypto::generate_account_key(&buf, mk_hash_bytes.as_bytes()){
-    Ok(auk) => auk,
-    Err(e) => return Err(e.to_string())
-  }; // xor secret key with master key hash
+  let mut raw_auk : Vec<u8> = buf.iter().zip(mk_hash_bytes.as_bytes()).map(|(x, y)| x ^ y).collect();
 
   buf.zeroize();
   
