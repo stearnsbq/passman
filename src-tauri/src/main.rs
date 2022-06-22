@@ -271,7 +271,7 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
 
   let mut raw_auk : Vec<u8> = sk.iter().zip(mk_hash_bytes.as_bytes()).map(|(x, y)| x ^ y).collect();
 
-  let mut context = match acquire_context_lock(&state) {
+  let mut context = match state.lock() {
     Ok(ctx) => ctx,
     Err(_) => return Err("Failed to acquire context".into()),
   };
