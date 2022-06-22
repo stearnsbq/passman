@@ -271,6 +271,7 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
   };
 
   context.logged_in = true;
+  context.account_key = SecStr::from(base64::encode(&raw_auk));
 
   let conn = match context.db.as_ref() {
     Some(conn) => conn,
@@ -278,9 +279,9 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
   };
 
 
-  raw_auk.zeroize();
+  let vault = match sqlcipher_block!(conn, base64::encode(&raw_auk), || -> Result<Vault, String> {
 
-  let vault = match sqlcipher_block!(conn, base64::encode(context.account_key.unsecure()), || -> Result<Vault, String> {
+    raw_auk.zeroize();
 
     let passwords = match get_passwords(conn){
       Ok(pwds) => pwds,
@@ -301,6 +302,8 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
     Ok(vault) => vault,
     Err(err) => return Err(err)
   };
+  
+
 
   Ok(vault)
   

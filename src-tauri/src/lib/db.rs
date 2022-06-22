@@ -5,7 +5,7 @@ use crate::types::{Password, UserData};
 pub fn get_passwords(conn: &Connection) -> Result<Vec<Password>, String> {
     let mut passwords_stmt = match conn.prepare("SELECT * FROM Password") {
         Ok(stmt) => stmt,
-        Err(_) => return Err("Failed to create password sql statement".into()),
+        Err(e) => return Err(e.to_string()),
     };
 
     let passwords_stmt_iter = match passwords_stmt.query_map([], |row| {

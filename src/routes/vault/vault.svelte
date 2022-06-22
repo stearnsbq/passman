@@ -1,14 +1,15 @@
 <script lang="ts">
   export let location;
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/tauri";
   import Menu from "./components/menu.svelte";
-  import Modal from "./components/modal.svelte";
   import NewPasswordModal from "./components/new-password-modal.svelte";
   import { listen, idle, onIdle } from "svelte-idle";
   import logo from "../../assets/no-icon.png";
   import ViewModal from "./components/view-modal.svelte";
   import PasswordCheckerModal from './components/password-checker.svelte'
   import GeneratePasswordModal from './components/generate-password.svelte'
+import { navigate, Router } from "svelte-routing";
 
   // start idle listener
   listen({
@@ -58,13 +59,22 @@
   }
 
   $: {
-    // if($idle){
-    //     alert("Are you still there? You will be logged out in 30 seconds if no activity is detected!")
-    //     idleTimeout = setTimeout(() => alert("logged out"), 5000);
-    // }else{
-    //     console.log("not idle")
-    //     clearTimeout(idleTimeout)
-    // }
+    if($idle){
+        alert("Are you still there? You will be logged out in 30 seconds if no activity is detected!")
+        idleTimeout = setTimeout(() => {
+         
+          invoke("logout").then(() => {
+            alert("you've been logged out");
+            vault = null;
+            navigate("/");
+            
+          })
+
+        }, 5000);
+    }else{
+        console.log("not idle")
+        clearTimeout(idleTimeout)
+    }
   }
 </script>
 
