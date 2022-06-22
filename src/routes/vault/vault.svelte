@@ -54,8 +54,17 @@ import { navigate, Router } from "svelte-routing";
     (e as any).target.src = logo;
   }
 
+  function onLogout(){
+    invoke("logout").then(() => {
+          vault = null;
+          navigate("/");
+    })
+  }
+
   function handleMessage(event) {
-    console.log(event);
+    invoke("get_vault").then((pwds) => {
+      vault.passwords = pwds;
+    })
   }
 
   $: {
@@ -67,7 +76,6 @@ import { navigate, Router } from "svelte-routing";
             alert("you've been logged out");
             vault = null;
             navigate("/");
-            
           })
 
         }, 30000);
@@ -100,6 +108,7 @@ import { navigate, Router } from "svelte-routing";
         </ul>
       </Menu>
     </div>
+    <span on:click={onLogout}>Logout</span>
   </header>
 
   <section class="password-list">

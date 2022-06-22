@@ -64,7 +64,3 @@ pub fn get_vault_key(conn: &Connection) -> Result<Vec<u8>, String> {
     Ok(key)
 }
 
-
-pub fn get_password(conn: &Connection, id: u32){
-  
-}
