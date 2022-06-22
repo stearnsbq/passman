@@ -5,7 +5,6 @@
   import { getFormData } from "../../lib/helpers";
 
   let key = "";
-  let passphrase = "";
   let invalid = true;
 
   let createdKey = false;
@@ -15,21 +14,18 @@
     .min(8)
     .has()
     .uppercase(1)
-    .lowercase()
+    .lowercase(1)
     .digits(1)
-    .symbols();
+    .symbols(1);
 
   function onSubmit(event) {
     if(!invalid){
 
-      invoke("generate_mnemonic").then((result: string) => {
-        createdKey = true;
-        passphrase = result;
-      });
-
       const data = getFormData(event.target);
 
       key = data.key;
+
+      setupVault()
 
     }
   }
@@ -38,14 +34,8 @@
     invalid = !passwordValidator.validate(key);
   }
 
-  function generatePassphrase() {
-    invoke("generate_mnemonic").then((result: string) => {
-      passphrase = result;
-    });
-  }
-
   function setupVault(){
-    invoke("setup_vault", {masterKey: key, passPhrase: passphrase}).then((result: string) => {
+    invoke("setup_vault", {masterKey: key}).then((result: string) => {
 
       if(result){
         navigate("login");
@@ -85,27 +75,17 @@
       </form>
     {/if}
 
-    {#if createdKey}
-      <section class="form-header">
-        <h1>Pass Phrase Generation</h1>
-      </section>
-
-      <p>
-        Write this down and put it in safe place. This will be used to recover
-        your vault if you forgot your master key!
-      </p>
-
-      <section class="passphrase-body">
-        <p>{passphrase}</p>
-
-        <button on:click={generatePassphrase}>Generate New</button>
-        <button on:click={setupVault}>Accept</button>
-      </section>
-    {/if}
   </div>
 </div>
 
 <style lang="scss">
+
+.body-controls{
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
   .passphrase-body {
     display: flex;
     flex-direction: column;

@@ -18,14 +18,12 @@ use lib::db::get_userdata;
 use lib::db::get_vault_key;
 use lib::util::acquire_context_lock;
 use secstr::*;
-use bip39::{Mnemonic, Language};
 use openssl::rand::rand_bytes;
 use openssl::symm::encrypt;
 use openssl::symm::decrypt;
 use openssl::symm::Cipher;
 use types::Context;
 use types::Password;
-use types::UserData;
 use types::Vault;
 use zeroize::Zeroize;
 use rusqlite::{params, Connection, Result};
@@ -39,8 +37,6 @@ use argon2::{
 
 mod lib;
 mod types;
-
-
 
 
 fn main() {
@@ -65,7 +61,7 @@ fn main() {
 
   tauri::Builder::default()
   .manage(Mutex::new(context))
-  .invoke_handler(tauri::generate_handler![generate_mnemonic, setup_vault, login, is_vault_setup, logout, generate_password, add_new_password, get_password, remove_password, get_vault])
+  .invoke_handler(tauri::generate_handler![setup_vault, login, is_vault_setup, logout, generate_password, add_new_password, get_password, remove_password, get_vault])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 
@@ -253,8 +249,6 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
     Err(_) => return Err("Failed to decode secret key".into())
   };
 
-  keys.next().unwrap();
-
   let salt = keys.next().unwrap();
 
   let mk_hash = match argon2.hash_password(master_key.as_bytes(), &salt){
@@ -313,20 +307,7 @@ fn login(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<Vaul
 }
 
 #[tauri::command]
-fn generate_mnemonic() -> Result<Mnemonic, String> {
-
-  let mut rng = rand::thread_rng();
-
-  let phrase = match Mnemonic::generate_in_with(&mut rng, Language::English, 12){
-    Ok(phr) => phr,
-    Err(_) => return Err("Failed to generate mnemonic phrase".into())
-  };
-
-  Ok(phrase)
-}
-
-#[tauri::command]
-fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phrase: String) -> Result<bool, String> {
+fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String) -> Result<bool, String> {
 
   let mut buf = [0; 32];
 
@@ -344,11 +325,6 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
     Err(_) => return Err("failed to hash master key".into())
   };
 
-  let pass_phrase_hash = match argon2.hash_password(pass_phrase.as_bytes(), &salt){
-    Ok(pp_hash) => pp_hash,
-    Err(_) => return Err("failed to hash master key".into())
-  };
-
   let mk_hash_bytes = master_key_hash.hash.unwrap();
 
   let mut master_key_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &mk_hash_bytes.as_bytes(), None, &buf) {
@@ -356,26 +332,17 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
     Err(_) => return Err("failed to encrypt private key with master key hash".into()),
   };
 
-  let mut pass_phrase_private_key_cipher_text = match encrypt(Cipher::aes_256_cbc(), &pass_phrase_hash.hash.unwrap().as_bytes(), None, &buf) {
-    Ok(cipher) => cipher,
-    Err(_) => return Err("failed to encrypt private key with pass phrase key hash".into()),
-  };
-
-  let mut mk_hex = base64::encode(&master_key_private_key_cipher_text);
+  let mut mk_b64 = base64::encode(&master_key_private_key_cipher_text);
   master_key_private_key_cipher_text.zeroize();
 
-  let mut pp_hex = base64::encode(&pass_phrase_private_key_cipher_text);
-  pass_phrase_private_key_cipher_text.zeroize();
 
-
-  match fs::write("./keys", format!("{}\n{}\n{}", mk_hex, pp_hex, salt.as_str())){
+  match fs::write("./keys", format!("{}\n{}", mk_b64, salt.as_str())){
     Ok(_) => (),
     Err(_) => return Err("Unable to write key file".into())
   };
 
-  mk_hex.zeroize();
-  pp_hex.zeroize();
-  
+  mk_b64.zeroize();
+
   let mut raw_auk : Vec<u8> = match lib::crypto::generate_account_key(&buf, mk_hash_bytes.as_bytes()){
     Ok(auk) => auk,
     Err(e) => return Err(e.to_string())
@@ -438,4 +405,3 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String, pass_phr
 
   Ok(true)
 }
-
