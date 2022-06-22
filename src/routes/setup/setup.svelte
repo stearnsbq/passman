@@ -37,9 +37,7 @@
   function setupVault(){
     invoke("setup_vault", {masterKey: key}).then((result: string) => {
 
-      if(result){
-        navigate("login");
-      }
+      navigate("login")
 
     });
   }

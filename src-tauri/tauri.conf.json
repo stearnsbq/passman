@@ -38,7 +38,7 @@
         "providerShortName": null,
         "signingIdentity": null
       },
-      "resources": [],
+      "resources": ["db"],
       "shortDescription": "",
       "targets": "all",
       "windows": {
@@ -57,7 +57,7 @@
       {
         "fullscreen": false,
         "height": 600,
-        "resizable": true,
+        "resizable": false,
         "title": "passman",
         "width": 800
       }

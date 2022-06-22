@@ -88,7 +88,7 @@ import { navigate, Router } from "svelte-routing";
 
 <ViewModal bind:show={showViewModal} vaultItem={currentVaultItem} />
 
-<NewPasswordModal on:message={handleMessage} bind:show={showNewPasswordModal} />
+<NewPasswordModal on:new-password={handleMessage} bind:show={showNewPasswordModal} />
 
 <GeneratePasswordModal bind:show={showPasswordGenModal} />
 
