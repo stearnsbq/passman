@@ -1,4 +1,4 @@
-#PassMan
+# PassMan
 ## A really basic password manager.
 
 ### Disclaimer
