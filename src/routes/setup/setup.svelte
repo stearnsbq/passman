@@ -10,13 +10,12 @@
   let createdKey = false;
 
   const passwordValidator = new validator()
-    .is()
-    .min(7)
-    .has()
-    .uppercase(1)
-    .lowercase(1)
-    .digits(1)
-    .symbols(1);
+    .is().min(8)
+    .has().uppercase()
+    .has().lowercase(1)
+    .has().digits(1)
+    .has().symbols(1)
+    .has().not().spaces();
 
   function onSubmit(event) {
     if(!invalid){
@@ -36,9 +35,7 @@
 
   function setupVault(){
     invoke("setup_vault", {masterKey: key}).then((result: string) => {
-
-      navigate("login")
-
+      navigate("/");
     });
   }
 

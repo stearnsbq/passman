@@ -394,7 +394,7 @@ fn setup_vault(state: tauri::State<Mutex<Context>>, master_key: String) -> Resul
     Err(e) => return Err(e)
   }
 
-  let mut context = match acquire_context_lock(&state) {
+  let mut context = match state.lock() {
     Ok(ctx) => ctx,
     Err(_) => return Err("Failed to acquire context".into()),
   };
